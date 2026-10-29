@@ -145,7 +145,7 @@ async function enterChat() {
 function renderRooms() {
   roomList.replaceChildren();
   const activeRoom = rooms.find((room) => room.id === activeRoomId);
-  if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = activeRoom ? `сейчас: ${activeRoom.name}` : '';
+  if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = activeRoom ? activeRoom.name : '';
   for (const room of rooms) {
     const wrapper = document.createElement('div');
     wrapper.className = 'room-row';
@@ -192,7 +192,7 @@ async function manageRoom(room) {
     rooms = rooms.map((item) => item.id === room.id ? updated : item);
     if (activeRoomId === room.id) {
       roomTitle.textContent = updated.name;
-      if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = `сейчас: ${updated.name}`;
+      if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = updated.name;
     }
     renderRooms();
   } catch (error) { showToast(error.message); }
@@ -204,7 +204,7 @@ async function selectRoom(roomId) {
   const room = rooms.find((item) => item.id === roomId);
   if (!room) return;
   roomTitle.textContent = room.name;
-  if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = `сейчас: ${room.name}`;
+  if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = room.name;
   renderRooms();
   const version = ++requestVersion;
   messagesEl.replaceChildren();
