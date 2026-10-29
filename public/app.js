@@ -19,6 +19,8 @@ const attachButton = document.querySelector('#attach-button');
 let pendingAttachment = null;
 let busyUploading = false;
 let nickname = localStorage.getItem('chatik.nickname') || '';
+let clientId = localStorage.getItem('chatik.clientId');
+if (!clientId) { clientId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`; localStorage.setItem('chatik.clientId', clientId); }
 let rooms = [];
 let activeRoomId = '';
 let socket;
@@ -107,9 +109,11 @@ messageInput.addEventListener('keydown', (event) => {
 messageInput.addEventListener('input', resizeInput);
 
 async function api(url, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (/\/messages\/\d+(?:\?|$)/.test(url) && ['PATCH', 'DELETE'].includes((options.method || 'GET').toUpperCase())) headers['X-Client-Id'] = clientId;
   const response = await fetch(url, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers,
   });
   let data;
   try { data = await response.json(); } catch { data = {}; }
@@ -138,6 +142,8 @@ async function enterChat() {
 function renderRooms() {
   roomList.replaceChildren();
   for (const room of rooms) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'room-row';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `room-button${room.id === activeRoomId ? ' active' : ''}`;
@@ -146,11 +152,42 @@ function renderRooms() {
     hash.className = 'room-hash';
     hash.textContent = '#';
     const label = document.createElement('span');
+    label.className = 'room-label';
     label.textContent = room.name;
     button.append(hash, label);
     button.addEventListener('click', () => selectRoom(room.id));
-    roomList.append(button);
+    wrapper.append(button);
+    const menuButton = document.createElement('button');
+    menuButton.type = 'button';
+    menuButton.className = 'room-menu-button';
+    menuButton.textContent = '⋮';
+    menuButton.setAttribute('aria-label', `Меню комнаты ${room.name}`);
+    menuButton.addEventListener('click', (event) => { event.stopPropagation(); manageRoom(room); });
+    wrapper.append(menuButton);
+    roomList.append(wrapper);
   }
+}
+
+async function manageRoom(room) {
+  const action = window.prompt(`Комната «${room.name}»: введи новое название для переименования или DELETE для удаления`);
+  if (action === null) return;
+  if (action.trim().toUpperCase() === 'DELETE') {
+    if (!window.confirm(`Удалить комнату «${room.name}» и все её сообщения?`)) return;
+    try {
+      await api(`/api/rooms/${encodeURIComponent(room.id)}`, { method: 'DELETE' });
+      rooms = rooms.filter((item) => item.id !== room.id);
+      if (activeRoomId === room.id) await selectRoom(rooms[0].id);
+      else renderRooms();
+    } catch (error) { showToast(error.message); }
+    return;
+  }
+  if (!action.trim()) return;
+  try {
+    const updated = await api(`/api/rooms/${encodeURIComponent(room.id)}`, { method: 'PUT', body: JSON.stringify({ name: action }) });
+    rooms = rooms.map((item) => item.id === room.id ? updated : item);
+    if (activeRoomId === room.id) roomTitle.textContent = updated.name;
+    renderRooms();
+  } catch (error) { showToast(error.message); }
 }
 
 async function selectRoom(roomId) {
@@ -169,7 +206,7 @@ async function selectRoom(roomId) {
     if (messages.length === 0) addEmptyState('Пока тихо. Напиши первым 👋');
     else messages.forEach(renderMessage);
     scrollToBottom();
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'join', nickname, roomId }));
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'join', nickname, roomId, clientId }));
   } catch (error) {
     if (version === requestVersion) showToast(error.message);
   }
@@ -183,15 +220,33 @@ function connectSocket() {
   setConnection('подключение', '');
   socket.addEventListener('open', () => {
     setConnection('на связи', 'online');
-    if (activeRoomId) socket.send(JSON.stringify({ type: 'join', nickname, roomId: activeRoomId }));
+    if (activeRoomId) socket.send(JSON.stringify({ type: 'join', nickname, roomId: activeRoomId, clientId }));
   });
   socket.addEventListener('message', (event) => {
     let data;
     try { data = JSON.parse(event.data); } catch { return; }
-    if (data.type === 'message' && data.message?.roomId === activeRoomId) {
-      removeEmptyState();
-      renderMessage(data.message);
-      scrollToBottom();
+      if (['message', 'message:updated'].includes(data.type) && data.message?.roomId === activeRoomId) {
+        removeEmptyState();
+        if (data.type === 'message:updated') replaceRenderedMessage(data.message);
+        else renderMessage(data.message);
+        scrollToBottom();
+    } else if (data.type === 'message:deleted' && data.roomId === activeRoomId) {
+      messagesEl.querySelector(`[data-message-id="${Number(data.id)}"]`)?.remove();
+      if (!messagesEl.querySelector('.message')) addEmptyState('Пока тихо. Напиши первым 👋');
+    } else if (data.type === 'message:preview' && Number.isSafeInteger(Number(data.id))) {
+      const article = messagesEl.querySelector(`[data-message-id="${Number(data.id)}"]`);
+      if (article) renderPreview(data.preview, article.querySelector('.message-body'));
+    } else if (data.type === 'room:created') {
+      if (!rooms.some((room) => room.id === data.room?.id)) rooms.push(data.room);
+      renderRooms();
+    } else if (data.type === 'room:updated') {
+      rooms = rooms.map((room) => room.id === data.room?.id ? data.room : room);
+      if (activeRoomId === data.room?.id) roomTitle.textContent = data.room.name;
+      renderRooms();
+    } else if (data.type === 'room:deleted') {
+      rooms = rooms.filter((room) => room.id !== data.roomId);
+      renderRooms();
+      if (activeRoomId === data.roomId && rooms.length) void selectRoom(rooms[0].id);
     } else if (data.type === 'error') {
       showToast(data.message || 'Ошибка чата.');
     }
@@ -206,8 +261,10 @@ function connectSocket() {
 function renderMessage(message) {
   const article = document.createElement('article');
   article.className = 'message';
+  const safeMessage = message && typeof message === 'object' ? message : {};
   try {
-    const safeMessage = message && typeof message === 'object' ? message : {};
+    article.dataset.messageId = String(safeMessage.id || '');
+    article.dataset.authorId = typeof safeMessage.authorId === 'string' ? safeMessage.authorId : '';
     const avatar = document.createElement('div');
     avatar.className = 'avatar';
     avatar.textContent = initial(safeMessage.nickname);
@@ -223,20 +280,136 @@ function renderMessage(message) {
     time.dateTime = Number.isNaN(date.getTime()) ? '' : date.toISOString();
     time.textContent = Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     meta.append(author, time);
+    if (safeMessage.edited) {
+      const edited = document.createElement('span'); edited.className = 'edited-marker'; edited.textContent = 'изменено'; meta.append(edited);
+    }
     body.append(meta);
     if (typeof safeMessage.text === 'string' && safeMessage.text) {
       const text = document.createElement('p');
       text.className = 'message-text';
-      text.textContent = safeMessage.text;
+      linkifyText(text, safeMessage.text);
       body.append(text);
     }
-    renderAttachment(safeMessage.attachment, body);
+    const firstTextUrl = typeof safeMessage.text === 'string' ? safeMessage.text.match(/https?:\/\/[^\s<>"']+/i)?.[0]?.replace(/[),.!?;:]+$/g, '') : '';
+    if (safeMessage.preview) renderPreview(safeMessage.preview, body, firstTextUrl);
+    else if (firstTextUrl && embedUrl(firstTextUrl)) renderPreview({ title: '' }, body, firstTextUrl);
+    try { renderAttachment(safeMessage.attachment, body); }
+    catch (attachmentError) {
+      console.error('Не удалось отобразить вложение:', attachmentError);
+      const attachment = safeMessage.attachment;
+      const fallback = document.createElement('a');
+      fallback.className = 'attachment-file';
+      fallback.href = typeof attachment?.url === 'string' && attachment.url.startsWith('/uploads/') && !attachment.url.includes('..') ? attachment.url : '#';
+      fallback.textContent = typeof attachment?.originalName === 'string' ? attachment.originalName : (typeof attachment?.name === 'string' ? attachment.name : 'Вложение');
+      body.append(fallback);
+    }
     article.append(avatar, body);
+    if (safeMessage.authorId && safeMessage.authorId === clientId) addMessageActions(article, body, safeMessage);
   } catch (error) {
     console.error('Не удалось отобразить сообщение:', error);
-    article.textContent = 'Не удалось отобразить это сообщение.';
+    article.replaceChildren();
+    article.dataset.messageId = typeof safeMessage.id === 'number' ? String(safeMessage.id) : '';
+    const fallback = document.createElement('p');
+    fallback.className = 'message-render-error';
+    fallback.textContent = 'Не удалось отобразить это сообщение.';
+    article.append(fallback);
   }
   messagesEl.append(article);
+  return article;
+}
+
+function replaceRenderedMessage(message) {
+  const old = messagesEl.querySelector(`[data-message-id="${Number(message.id)}"]`);
+  if (!old) return;
+  const next = document.createElement('div');
+  messagesEl.append(next);
+  renderMessage(message);
+  const rendered = messagesEl.lastElementChild;
+  next.remove();
+  old.replaceWith(rendered);
+}
+
+function linkifyText(parent, value) {
+  const escaped = document.createElement('span');
+  escaped.textContent = String(value || '');
+  const source = escaped.textContent;
+  const pattern = /https?:\/\/[^\s<>"']+/gi;
+  let cursor = 0;
+  for (const match of source.matchAll(pattern)) {
+    let candidate = match[0];
+    const trailing = candidate.match(/[),.!?;:]+$/)?.[0] || '';
+    if (trailing) candidate = candidate.slice(0, -trailing.length);
+    if (match.index > cursor) parent.append(document.createTextNode(source.slice(cursor, match.index)));
+    let safe = false;
+    try { const parsed = new URL(candidate); safe = ['http:', 'https:'].includes(parsed.protocol); } catch {}
+    if (candidate && safe) {
+      const anchor = document.createElement('a');
+      anchor.href = candidate; anchor.target = '_blank'; anchor.rel = 'noopener'; anchor.textContent = candidate;
+      parent.append(anchor);
+    } else parent.append(document.createTextNode(candidate));
+    if (trailing) parent.append(document.createTextNode(trailing));
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < source.length) parent.append(document.createTextNode(source.slice(cursor)));
+}
+
+function embedUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl); const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'youtu.be') return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(url.pathname.slice(1))}`;
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+      const id = url.pathname === '/watch' ? url.searchParams.get('v') : url.pathname.match(/^\/(?:embed|shorts)\/([^/?]+)/)?.[1];
+      return id ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}` : '';
+    }
+    if (host === 'rutube.ru') { const id = url.pathname.match(/\/video\/([\w-]+)/)?.[1]; return id ? `https://rutube.ru/play/embed/${encodeURIComponent(id)}` : ''; }
+    if (host === 'vk.com' || host === 'm.vk.com' || host === 'vkvideo.ru') {
+      if (!/video/i.test(url.pathname)) return '';
+      return `https://vk.com${url.pathname}${url.search}`;
+    }
+    if (host === 'vimeo.com' || host === 'player.vimeo.com') { const id = url.pathname.match(/\/(?:video\/)?(\d+)/)?.[1]; return id ? `https://player.vimeo.com/video/${id}` : ''; }
+  } catch {}
+  return '';
+}
+
+function renderPreview(preview, parent, explicitUrl = '') {
+  if (!preview || !parent || parent.querySelector('.link-preview') || parent.querySelector('.video-facade')) return;
+  const firstUrl = explicitUrl || parent.closest('.message')?.querySelector('.message-text a')?.href;
+  if (!firstUrl) return;
+  const facadeUrl = embedUrl(firstUrl);
+  if (facadeUrl) {
+    const facade = document.createElement('button'); facade.type = 'button'; facade.className = 'video-facade'; facade.textContent = '▶ Нажми, чтобы загрузить видео';
+    facade.addEventListener('click', () => {
+      const frame = document.createElement('iframe'); frame.src = facadeUrl; frame.title = 'Видеоплеер'; frame.loading = 'lazy'; frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'; frame.allowFullscreen = true; facade.replaceWith(frame);
+    }, { once: true });
+    parent.append(facade); return;
+  }
+  const card = document.createElement('a'); card.className = 'link-preview'; card.href = firstUrl; card.target = '_blank'; card.rel = 'noopener';
+  if (typeof preview.image === 'string' && /^https?:\/\//i.test(preview.image)) { const image = document.createElement('img'); image.src = preview.image; image.alt = ''; image.loading = 'lazy'; card.append(image); }
+  const title = document.createElement('strong'); title.textContent = String(preview.title || firstUrl).slice(0, 240); card.append(title); parent.append(card);
+}
+
+function addMessageActions(article, body, message) {
+  const wrap = document.createElement('div'); wrap.className = 'message-actions';
+  const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Изменить'; edit.addEventListener('click', () => beginEdit(article, message));
+  const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Удалить'; remove.addEventListener('click', async () => {
+    if (!window.confirm('Удалить это сообщение?')) return;
+    try { await api(`/api/messages/${message.id}`, { method: 'DELETE' }); article.remove(); } catch (error) { showToast(error.message); }
+  });
+  wrap.append(edit, remove); body.append(wrap);
+}
+
+function beginEdit(article, message) {
+  if (article.querySelector('.edit-form')) return;
+  const body = article.querySelector('.message-body'); const text = body.querySelector('.message-text');
+  const form = document.createElement('form'); form.className = 'edit-form';
+  const input = document.createElement('textarea'); input.maxLength = 2000; input.value = message.text || ''; input.setAttribute('aria-label', 'Изменить сообщение');
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Сохранить';
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Отмена'; cancel.addEventListener('click', () => { form.remove(); if (text) text.classList.remove('hidden'); });
+  form.addEventListener('submit', async (event) => { event.preventDefault(); if (!input.value.trim()) return showToast('Сообщение не может быть пустым.');
+    try { const updated = await api(`/api/messages/${message.id}`, { method: 'PATCH', body: JSON.stringify({ text: input.value }) }); replaceRenderedMessage(updated); }
+    catch (error) { showToast(error.message); }
+  });
+  if (text) text.classList.add('hidden'); form.append(input, save, cancel); body.append(form); input.focus();
 }
 
 function renderAttachment(attachment, parent) {
@@ -245,14 +418,14 @@ function renderAttachment(attachment, parent) {
     ? attachment.url
     : '';
   if (!url) return;
-  const name = typeof attachment.name === 'string' && attachment.name ? attachment.name : 'Вложение';
+  const name = typeof attachment.originalName === 'string' && attachment.originalName ? attachment.originalName : (typeof attachment.name === 'string' && attachment.name ? attachment.name : 'Вложение');
   const type = typeof attachment.type === 'string' ? attachment.type.toLowerCase() : '';
   const link = document.createElement('a');
   link.href = url;
   if (type.startsWith('image/')) {
     link.className = 'attachment-image-link';
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
+    link.href = '#';
+    link.addEventListener('click', (event) => { event.preventDefault(); openLightbox(url, name); });
     link.setAttribute('aria-label', `Открыть изображение ${name}`);
     const image = document.createElement('img');
     image.className = 'attachment-image';
@@ -263,10 +436,18 @@ function renderAttachment(attachment, parent) {
     }, { once: true });
     image.src = url;
     link.append(image);
-  } else {
-    return parent.append(createAttachmentFileLink(url, name, attachment.size));
   }
-  parent.append(link);
+  if (type === 'application/pdf' || name.toLowerCase().endsWith('.pdf')) {
+    const card = document.createElement('div'); card.className = 'pdf-preview-card';
+    const title = document.createElement('span'); title.className = 'attachment-name'; title.textContent = `📄 ${name}`;
+    const preview = document.createElement('button'); preview.type = 'button'; preview.className = 'pdf-load'; preview.textContent = 'Открыть предпросмотр';
+    preview.addEventListener('click', () => { const frame = document.createElement('iframe'); frame.className = 'pdf-embed'; frame.src = url; frame.title = name; frame.loading = 'lazy'; preview.replaceWith(frame); }, { once: true });
+    const open = document.createElement('a'); open.href = url; open.target = '_blank'; open.rel = 'noopener'; open.textContent = 'Открыть в новой вкладке';
+    card.append(title, preview, open); parent.append(card); return;
+  }
+  const file = createAttachmentFileLink(url, name, attachment.size);
+  file.href = url; file.target = '_blank'; file.rel = 'noopener';
+  return parent.append(file);
 }
 function createAttachmentFileLink(url, name, bytes) {
   const link = document.createElement('a');
@@ -289,6 +470,20 @@ function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function openLightbox(src, name) {
+  let overlay = document.querySelector('#lightbox');
+  if (!overlay) {
+    overlay = document.createElement('div'); overlay.id = 'lightbox'; overlay.className = 'lightbox'; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
+    const image = document.createElement('img'); image.className = 'lightbox-image';
+    overlay.append(image); overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.remove(); });
+    document.body.append(overlay);
+  }
+  const image = overlay.querySelector('img'); image.src = src; image.alt = name; image.style.transform = 'scale(1)';
+  const close = (event) => { if (event.key === 'Escape') overlay.remove(); };
+  const zoom = (event) => { event.preventDefault(); const current = Number(image.dataset.zoom || 1); const next = Math.max(.5, Math.min(4, current * (event.deltaY < 0 ? 1.15 : .87))); image.dataset.zoom = String(next); image.style.transform = `scale(${next})`; };
+  overlay.addEventListener('wheel', zoom, { passive: false }); document.addEventListener('keydown', close, { once: true });
 }
 
 function addEmptyState(text) {
