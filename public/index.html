@@ -26,13 +26,12 @@
     <section class="chat-layout hidden" id="chat-screen" aria-label="Чат Chatik">
       <aside class="sidebar">
         <div class="sidebar-brand"><span class="brand-mark small" aria-hidden="true">ч</span><span>chatik</span></div>
-        <div class="section-title"><span>КОМНАТЫ</span><button id="add-room" class="icon-button" type="button" title="Создать комнату" aria-label="Создать комнату">+</button></div>
-        <div id="sidebar-current-room" class="sidebar-current-room" aria-live="polite"></div>
+        <div class="section-title"><button id="add-room" class="icon-button" type="button" title="Создать комнату" aria-label="Создать комнату">+</button></div>
         <nav id="room-list" class="room-list" aria-label="Комнаты"></nav>
-        <div class="profile"><div class="avatar" id="user-avatar">?</div><div class="profile-copy"><strong id="user-name"></strong><span>в сети</span></div></div>
+        <div class="profile"><div class="profile-copy"><strong id="user-name"></strong><span>в сети</span></div></div>
       </aside>
       <section class="conversation">
-        <header class="chat-header"><div class="chat-room-heading"><p class="eyebrow">КОМНАТА</p><h2 id="room-title" class="chat-room-title">Общий</h2></div><div class="connection"><span class="status-dot"></span><span id="connection-label">подключение</span></div></header>
+        <header class="chat-header"><div class="chat-room-heading"><h2 id="room-title" class="chat-room-title">Общий</h2></div><div class="connection"><span class="status-dot"></span><span id="connection-label">подключение</span></div></header>
         <div class="messages" id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
         <button class="history-scroll-button history-scroll-top" type="button" aria-label="К началу чата" title="К началу чата">↑</button>
         <button class="history-scroll-button history-scroll-bottom" type="button" aria-label="К последним сообщениям" title="К последним сообщениям">↓</button>

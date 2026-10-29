@@ -137,7 +137,6 @@ async function enterChat() {
     loginScreen.classList.add('hidden');
     chatScreen.classList.remove('hidden');
     document.querySelector('#user-name').textContent = nickname;
-    document.querySelector('#user-avatar').textContent = initial(nickname);
     renderRooms();
     const roomId = rooms.some((room) => room.id === activeRoomId) ? activeRoomId : rooms[0].id;
     await selectRoom(roomId);
