@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: chatik
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DB_FILE
+        value: /tmp/chatik.sqlite
