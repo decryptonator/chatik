@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101318">
+  <title>Chatik</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <section class="login-card" id="login-screen" aria-labelledby="app-title">
+      <div class="brand-mark" aria-hidden="true">ч</div>
+      <p class="eyebrow">свой маленький чат</p>
+      <h1 id="app-title">Chatik</h1>
+      <p class="muted intro">Выбери ник и залетай в разговор</p>
+      <form id="login-form">
+        <label for="nickname">Твой ник</label>
+        <input id="nickname" name="nickname" maxlength="24" placeholder="Например, Лёха" autocomplete="nickname" required>
+        <button class="primary" type="submit">Продолжить <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="form-error" id="login-error" role="alert"></p>
+    </section>
+
+    <section class="chat-layout hidden" id="chat-screen" aria-label="Чат Chatik">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><span class="brand-mark small" aria-hidden="true">ч</span><span>chatik</span></div>
+        <div class="section-title"><span>КОМНАТЫ</span><button id="add-room" class="icon-button" type="button" title="Создать комнату" aria-label="Создать комнату">+</button></div>
+        <nav id="room-list" class="room-list" aria-label="Комнаты"></nav>
+        <div class="profile"><div class="avatar" id="user-avatar">?</div><div class="profile-copy"><strong id="user-name"></strong><span>в сети</span></div><button id="change-name" class="icon-button profile-action" type="button" title="Сменить ник" aria-label="Сменить ник">↗</button></div>
+      </aside>
+      <section class="conversation">
+        <header class="chat-header"><div><p class="eyebrow">КОМНАТА</p><h2 id="room-title">Общий</h2></div><div class="connection"><span class="status-dot"></span><span id="connection-label">подключение</span></div></header>
+        <div class="messages" id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
+        <div class="composer-wrap"><form id="message-form" class="composer"><textarea id="message-input" maxlength="2000" rows="1" placeholder="Написать сообщение..." aria-label="Текст сообщения"></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение">↑</button></form><p class="hint">Enter отправить · Shift + Enter новая строка</p></div>
+      </section>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

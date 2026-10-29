@@ -1,0 +1,5 @@
+node_modules/
+chatik.sqlite
+chatik.sqlite-shm
+chatik.sqlite-wal
+.env
