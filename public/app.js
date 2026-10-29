@@ -8,6 +8,7 @@ const loginError = document.querySelector('#login-error');
 const roomList = document.querySelector('#room-list');
 const messagesEl = document.querySelector('#messages');
 const roomTitle = document.querySelector('#room-title');
+const sidebarCurrentRoom = document.querySelector('#sidebar-current-room');
 const messageForm = document.querySelector('#message-form');
 const messageInput = document.querySelector('#message-input');
 const connectionEl = document.querySelector('.connection');
@@ -22,6 +23,7 @@ let nickname = localStorage.getItem('chatik.nickname') || '';
 let clientId = localStorage.getItem('chatik.clientId');
 if (!clientId) { clientId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`; localStorage.setItem('chatik.clientId', clientId); }
 let rooms = [];
+let unreadCounts = new Map();
 let activeRoomId = '';
 let socket;
 let reconnectTimer;
@@ -125,6 +127,7 @@ async function enterChat() {
   loginError.textContent = '';
   try {
     rooms = await api('/api/rooms');
+    unreadCounts = new Map(rooms.map((room) => [room.id, 0]));
     if (!rooms.length) throw new Error('Список комнат пуст. Перезагрузите страницу.');
     loginScreen.classList.add('hidden');
     chatScreen.classList.remove('hidden');
@@ -141,6 +144,8 @@ async function enterChat() {
 
 function renderRooms() {
   roomList.replaceChildren();
+  const activeRoom = rooms.find((room) => room.id === activeRoomId);
+  if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = activeRoom ? `сейчас: ${activeRoom.name}` : '';
   for (const room of rooms) {
     const wrapper = document.createElement('div');
     wrapper.className = 'room-row';
@@ -157,6 +162,14 @@ function renderRooms() {
     button.append(hash, label);
     button.addEventListener('click', () => selectRoom(room.id));
     wrapper.append(button);
+    const unreadCount = unreadCounts.get(room.id) || 0;
+    if (unreadCount > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'room-unread-badge';
+      badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+      badge.setAttribute('aria-label', `${unreadCount} непрочитанных сообщений`);
+      wrapper.append(badge);
+    }
     const menuButton = document.createElement('button');
     menuButton.type = 'button';
     menuButton.className = 'room-menu-button';
@@ -185,16 +198,21 @@ async function manageRoom(room) {
   try {
     const updated = await api(`/api/rooms/${encodeURIComponent(room.id)}`, { method: 'PUT', body: JSON.stringify({ name: action }) });
     rooms = rooms.map((item) => item.id === room.id ? updated : item);
-    if (activeRoomId === room.id) roomTitle.textContent = updated.name;
+    if (activeRoomId === room.id) {
+      roomTitle.textContent = updated.name;
+      if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = `сейчас: ${updated.name}`;
+    }
     renderRooms();
   } catch (error) { showToast(error.message); }
 }
 
 async function selectRoom(roomId) {
   activeRoomId = roomId;
+  unreadCounts.set(roomId, 0);
   const room = rooms.find((item) => item.id === roomId);
   if (!room) return;
   roomTitle.textContent = room.name;
+  if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = `сейчас: ${room.name}`;
   renderRooms();
   const version = ++requestVersion;
   messagesEl.replaceChildren();
@@ -225,11 +243,16 @@ function connectSocket() {
   socket.addEventListener('message', (event) => {
     let data;
     try { data = JSON.parse(event.data); } catch { return; }
-      if (['message', 'message:updated'].includes(data.type) && data.message?.roomId === activeRoomId) {
-        removeEmptyState();
-        if (data.type === 'message:updated') replaceRenderedMessage(data.message);
-        else renderMessage(data.message);
-        scrollToBottom();
+      if (['message', 'message:updated'].includes(data.type) && data.message) {
+        if (data.message.roomId === activeRoomId) {
+          removeEmptyState();
+          if (data.type === 'message:updated') replaceRenderedMessage(data.message);
+          else renderMessage(data.message);
+          scrollToBottom();
+        } else if (data.type === 'message' && data.message.roomId) {
+          unreadCounts.set(data.message.roomId, (unreadCounts.get(data.message.roomId) || 0) + 1);
+          renderRooms();
+        }
     } else if (data.type === 'message:deleted' && data.roomId === activeRoomId) {
       messagesEl.querySelector(`[data-message-id="${Number(data.id)}"]`)?.remove();
       if (!messagesEl.querySelector('.message')) addEmptyState('Пока тихо. Напиши первым 👋');
@@ -238,6 +261,7 @@ function connectSocket() {
       if (article) renderPreview(data.preview, article.querySelector('.message-body'));
     } else if (data.type === 'room:created') {
       if (!rooms.some((room) => room.id === data.room?.id)) rooms.push(data.room);
+      if (data.room?.id) unreadCounts.set(data.room.id, 0);
       renderRooms();
     } else if (data.type === 'room:updated') {
       rooms = rooms.map((room) => room.id === data.room?.id ? data.room : room);
@@ -245,6 +269,7 @@ function connectSocket() {
       renderRooms();
     } else if (data.type === 'room:deleted') {
       rooms = rooms.filter((room) => room.id !== data.roomId);
+      unreadCounts.delete(data.roomId);
       renderRooms();
       if (activeRoomId === data.roomId && rooms.length) void selectRoom(rooms[0].id);
     } else if (data.type === 'error') {
@@ -291,8 +316,7 @@ function renderMessage(message) {
       body.append(text);
     }
     const firstTextUrl = typeof safeMessage.text === 'string' ? safeMessage.text.match(/https?:\/\/[^\s<>"']+/i)?.[0]?.replace(/[),.!?;:]+$/g, '') : '';
-    if (safeMessage.preview) renderPreview(safeMessage.preview, body, firstTextUrl);
-    else if (firstTextUrl && embedUrl(firstTextUrl)) renderPreview({ title: '' }, body, firstTextUrl);
+    if (safeMessage.preview || firstTextUrl) renderPreview(safeMessage.preview || {}, body, firstTextUrl);
     try { renderAttachment(safeMessage.attachment, body); }
     catch (attachmentError) {
       console.error('Не удалось отобразить вложение:', attachmentError);
@@ -333,24 +357,27 @@ function linkifyText(parent, value) {
   const escaped = document.createElement('span');
   escaped.textContent = String(value || '');
   const source = escaped.textContent;
+  const safeAnchor = document.createElement('a');
+  const content = document.createDocumentFragment();
   const pattern = /https?:\/\/[^\s<>"']+/gi;
   let cursor = 0;
   for (const match of source.matchAll(pattern)) {
     let candidate = match[0];
     const trailing = candidate.match(/[),.!?;:]+$/)?.[0] || '';
     if (trailing) candidate = candidate.slice(0, -trailing.length);
-    if (match.index > cursor) parent.append(document.createTextNode(source.slice(cursor, match.index)));
+    if (match.index > cursor) content.append(document.createTextNode(source.slice(cursor, match.index)));
     let safe = false;
     try { const parsed = new URL(candidate); safe = ['http:', 'https:'].includes(parsed.protocol); } catch {}
     if (candidate && safe) {
-      const anchor = document.createElement('a');
+      const anchor = safeAnchor.cloneNode(false);
       anchor.href = candidate; anchor.target = '_blank'; anchor.rel = 'noopener'; anchor.textContent = candidate;
-      parent.append(anchor);
-    } else parent.append(document.createTextNode(candidate));
-    if (trailing) parent.append(document.createTextNode(trailing));
+      content.append(anchor);
+    } else content.append(document.createTextNode(candidate));
+    if (trailing) content.append(document.createTextNode(trailing));
     cursor = match.index + match[0].length;
   }
-  if (cursor < source.length) parent.append(document.createTextNode(source.slice(cursor)));
+  if (cursor < source.length) content.append(document.createTextNode(source.slice(cursor)));
+  parent.replaceChildren(content);
 }
 
 function embedUrl(rawUrl) {
@@ -414,15 +441,15 @@ function beginEdit(article, message) {
 
 function renderAttachment(attachment, parent) {
   if (!attachment || typeof attachment !== 'object' || Array.isArray(attachment)) return;
-  const url = typeof attachment.url === 'string' && attachment.url.startsWith('/uploads/') && !attachment.url.includes('..')
-    ? attachment.url
-    : '';
+  const url = typeof attachment.url === 'string' && attachment.url.startsWith('/uploads/') && !attachment.url.includes('..') ? attachment.url : '';
   if (!url) return;
   const name = typeof attachment.originalName === 'string' && attachment.originalName ? attachment.originalName : (typeof attachment.name === 'string' && attachment.name ? attachment.name : 'Вложение');
-  const type = typeof attachment.type === 'string' ? attachment.type.toLowerCase() : '';
-  const link = document.createElement('a');
-  link.href = url;
-  if (type.startsWith('image/')) {
+  const type = typeof attachment.type === 'string' ? attachment.type.split(';', 1)[0].trim().toLowerCase() : '';
+  const pathname = (() => { try { return new URL(url, window.location.origin).pathname.toLowerCase(); } catch { return url.toLowerCase(); } })();
+  const isImage = type.startsWith('image/') || /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/.test(name.toLowerCase()) || /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/.test(pathname);
+  const isPdf = type === 'application/pdf' || name.toLowerCase().endsWith('.pdf') || pathname.endsWith('.pdf');
+  if (isImage) {
+    const link = document.createElement('a');
     link.className = 'attachment-image-link';
     link.href = '#';
     link.addEventListener('click', (event) => { event.preventDefault(); openLightbox(url, name); });
@@ -431,13 +458,13 @@ function renderAttachment(attachment, parent) {
     image.className = 'attachment-image';
     image.alt = name;
     image.loading = 'lazy';
-    image.addEventListener('error', () => {
-      link.replaceWith(createAttachmentFileLink(url, name, attachment.size));
-    }, { once: true });
+    image.addEventListener('error', () => { link.replaceWith(createAttachmentFileLink(url, name, attachment.size)); }, { once: true });
     image.src = url;
     link.append(image);
+    parent.append(link);
+    return;
   }
-  if (type === 'application/pdf' || name.toLowerCase().endsWith('.pdf')) {
+  if (isPdf) {
     const card = document.createElement('div'); card.className = 'pdf-preview-card';
     const title = document.createElement('span'); title.className = 'attachment-name'; title.textContent = `📄 ${name}`;
     const preview = document.createElement('button'); preview.type = 'button'; preview.className = 'pdf-load'; preview.textContent = 'Открыть предпросмотр';
@@ -447,7 +474,7 @@ function renderAttachment(attachment, parent) {
   }
   const file = createAttachmentFileLink(url, name, attachment.size);
   file.href = url; file.target = '_blank'; file.rel = 'noopener';
-  return parent.append(file);
+  parent.append(file);
 }
 function createAttachmentFileLink(url, name, bytes) {
   const link = document.createElement('a');
