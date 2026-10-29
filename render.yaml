@@ -7,5 +7,7 @@ services:
     startCommand: npm start
     healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: "22"
       - key: DB_FILE
         value: /tmp/chatik.sqlite
