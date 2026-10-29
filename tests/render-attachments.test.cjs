@@ -30,7 +30,7 @@ const document = {
 };
 const sandboxModule = { exports: {} };
 const source = fs.readFileSync('public/app.js', 'utf8')
-  .replace("'use strict';", "'use strict'; module.exports = { renderMessage, linkifyText, openLightbox };");
+  .replace("'use strict';", "'use strict'; module.exports = { renderMessage, linkifyText, openLightbox, renderAttachment };");
 const makeWindow = () => ({location:{protocol:'http:',host:'localhost'},prompt(){},confirm(){return true},crypto:{randomUUID(){return 'test-client'}}});
 new Function('document','localStorage','window','WebSocket','fetch','console','FormData','module','setTimeout','clearTimeout','requestAnimationFrame','cancelAnimationFrame',source)(
   document, {getItem(){return ''},setItem(){}}, makeWindow(),
@@ -38,7 +38,7 @@ new Function('document','localStorage','window','WebSocket','fetch','console','F
   class FormData {append(){}}, sandboxModule, setTimeout, clearTimeout,
   (callback) => { callback(); return 1; }, () => {},
 );
-const { renderMessage, linkifyText, openLightbox } = sandboxModule.exports;
+const { renderMessage, linkifyText, openLightbox, renderAttachment } = sandboxModule.exports;
 renderMessage({nickname:'Tester',createdAt:new Date().toISOString(),text:'QR image',attachment:{url:'/uploads/qr.png',name:'qr.png',size:120,type:'image/png'}});
 renderMessage({nickname:'Tester',createdAt:new Date().toISOString(),text:'PNG mime missing',attachment:{url:'/uploads/qr-2.png',name:'qr-2.png',size:120,type:'application/octet-stream'}});
 renderMessage({nickname:'Tester',createdAt:new Date().toISOString(),text:'PDF',attachment:{url:'/uploads/doc.pdf',name:'doc.pdf',size:90510,type:'application/pdf'}});
@@ -77,4 +77,13 @@ assert.equal(linkified.children.some((node) => node.tag === 'a' && node._href ==
 assert.equal(linkified.children.some((node) => node.tag === 'a' && node._rel === 'noopener'), true);
 assert.equal(linkified.children.some((node) => node.tag === 'script'), false);
 assert.equal(failures.length, 1, 'the simulated render exception is caught and logged once');
-console.log('PASS: image→PDF and image→image pairs, isolated render fault, composer persistence, safe linkify');
+const pdfParent = makeElement('div');
+renderAttachment({url:'/uploads/zoom.pdf',name:'zoom.pdf',size:120,type:'application/pdf'},pdfParent);
+const pdfCard = pdfParent.children[0];
+assert.equal(pdfCard.className,'pdf-preview-card');
+assert.equal(pdfCard.children[1].className,'pdf-viewer');
+assert.equal(pdfCard.children[1].children[1].tag,'iframe');
+assert.equal(pdfCard.children[1].children[1]._src,'/uploads/zoom.pdf#page=1&zoom=100');
+assert.equal(pdfCard.children[1].children[0].children.length,3);
+assert.equal(pdfCard.children[2]._target,'_blank');
+console.log('PASS: attachment pairs, render fault isolation, composer presence, safe linkify, PDF first-page preview card and new-tab link');

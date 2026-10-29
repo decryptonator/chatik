@@ -430,7 +430,9 @@ function addMessageActions(article, body, message) {
     if (!window.confirm('Удалить это сообщение?')) return;
     try { await api(`/api/messages/${message.id}`, { method: 'DELETE' }); article.remove(); } catch (error) { showToast(error.message); }
   });
-  wrap.append(edit, remove); body.append(wrap);
+  const menu = document.createElement('details'); menu.className = 'message-menu';
+  const toggle = document.createElement('summary'); toggle.textContent = '⋮'; toggle.setAttribute('aria-label', 'Действия с сообщением');
+  const items = document.createElement('div'); items.className = 'message-menu-items'; items.append(edit, remove); menu.append(toggle, items); wrap.append(menu); body.append(wrap);
 }
 
 function beginEdit(article, message) {
@@ -439,11 +441,15 @@ function beginEdit(article, message) {
   const form = document.createElement('form'); form.className = 'edit-form';
   const input = document.createElement('textarea'); input.maxLength = 2000; input.value = message.text || ''; input.setAttribute('aria-label', 'Изменить сообщение');
   const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Сохранить';
+  let submitting = false;
   const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Отмена'; cancel.addEventListener('click', () => { form.remove(); if (text) text.classList.remove('hidden'); });
-  form.addEventListener('submit', async (event) => { event.preventDefault(); if (!input.value.trim()) return showToast('Сообщение не может быть пустым.');
+  form.addEventListener('submit', async (event) => { event.preventDefault(); if (submitting) return; if (!input.value.trim()) return showToast('Сообщение не может быть пустым.');
+    submitting = true; input.disabled = true; save.disabled = true;
     try { const updated = await api(`/api/messages/${message.id}`, { method: 'PATCH', body: JSON.stringify({ text: input.value }) }); replaceRenderedMessage(updated); }
-    catch (error) { showToast(error.message); }
+    catch (error) { submitting = false; input.disabled = false; save.disabled = false; showToast(error.message); }
   });
+  input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); } });
+  input.addEventListener('blur', () => { if (submitting) return; if (input.value.trim() && input.value.trim() !== (message.text || '').trim()) form.requestSubmit(); else { form.remove(); if (text) text.classList.remove('hidden'); } });
   if (text) text.classList.add('hidden'); form.append(input, save, cancel); body.append(form); input.focus();
 }
 
@@ -475,10 +481,18 @@ function renderAttachment(attachment, parent) {
   if (isPdf) {
     const card = document.createElement('div'); card.className = 'pdf-preview-card';
     const title = document.createElement('span'); title.className = 'attachment-name'; title.textContent = `📄 ${name}`;
-    const preview = document.createElement('button'); preview.type = 'button'; preview.className = 'pdf-load'; preview.textContent = 'Открыть предпросмотр';
-    preview.addEventListener('click', () => { const frame = document.createElement('iframe'); frame.className = 'pdf-embed'; frame.src = url; frame.title = name; frame.loading = 'lazy'; preview.replaceWith(frame); }, { once: true });
+    const viewer = document.createElement('div'); viewer.className = 'pdf-viewer'; viewer.dataset.zoom = '100';
+    const controls = document.createElement('div'); controls.className = 'pdf-controls';
+    const zoomOut = document.createElement('button'); zoomOut.type = 'button'; zoomOut.textContent = '−'; zoomOut.setAttribute('aria-label', 'Уменьшить PDF');
+    const zoomLabel = document.createElement('span'); zoomLabel.textContent = '100%';
+    const zoomIn = document.createElement('button'); zoomIn.type = 'button'; zoomIn.textContent = '+'; zoomIn.setAttribute('aria-label', 'Увеличить PDF');
+    controls.append(zoomOut, zoomLabel, zoomIn);
+    const frame = document.createElement('iframe'); frame.className = 'pdf-embed'; frame.src = `${url}#page=1&zoom=100`; frame.title = `${name}, страница 1`; frame.loading = 'lazy';
+    const setZoom = (next) => { const zoom = Math.max(50, Math.min(200, next)); viewer.dataset.zoom = String(zoom); zoomLabel.textContent = `${zoom}%`; frame.src = `${url}#page=1&zoom=${zoom}`; };
+    zoomOut.addEventListener('click', () => setZoom(Number(viewer.dataset.zoom) - 25)); zoomIn.addEventListener('click', () => setZoom(Number(viewer.dataset.zoom) + 25));
+    viewer.append(controls, frame);
     const open = document.createElement('a'); open.href = url; open.target = '_blank'; open.rel = 'noopener'; open.textContent = 'Открыть в новой вкладке';
-    card.append(title, preview, open); parent.append(card); return;
+    card.append(title, viewer, open); parent.append(card); return;
   }
   const file = createAttachmentFileLink(url, name, attachment.size);
   file.href = url; file.target = '_blank'; file.rel = 'noopener';

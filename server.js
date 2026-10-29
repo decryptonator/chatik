@@ -196,7 +196,7 @@ const clientsByRoom = new Map();
 
 function cleanText(value, maxLength) {
   if (typeof value !== 'string') return '';
-  return value.trim().replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/g, '').slice(0, maxLength);
+  return value.trim().replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').slice(0, maxLength);
 }
 
 function normalizeUploadedFilename(value) {
