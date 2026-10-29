@@ -185,6 +185,21 @@ app.post('/upload', (req, res) => {
     });
   });
 });
+app.delete('/uploads/:filename', (req, res) => {
+  const filename = req.params.filename;
+  if (!/^[0-9a-f-]{36}(?:\.[\w-]{1,16})?$/i.test(filename)) return res.status(400).json({ error: 'Некорректный файл.' });
+  const url = `/uploads/${encodeURIComponent(filename)}`;
+  const referenced = db.prepare('SELECT 1 FROM messages WHERE attachment LIKE ? LIMIT 1').get(`%${url}%`);
+  if (referenced) return res.status(409).json({ error: 'Файл уже прикреплён к сообщению.' });
+  const filePath = path.join(UPLOAD_DIR, filename);
+  try {
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Файл не найден.' });
+    fs.unlinkSync(filePath);
+    return res.json({ ok: true });
+  } catch {
+    return res.status(500).json({ error: 'Не удалось удалить файл.' });
+  }
+});
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.get('*', (_req, res, next) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'), (error) => error && next(error));

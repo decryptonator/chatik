@@ -22,8 +22,9 @@ const historyBottomButton = document.querySelector('.history-scroll-bottom');
 historyTopButton?.addEventListener('click', () => { messagesEl.scrollTo({ top: 0, behavior: 'smooth' }); });
 historyBottomButton?.addEventListener('click', () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); });
 
-let pendingAttachment = null;
-let busyUploading = false;
+let pendingUpload = null;
+let busySending = false;
+let uploadSequence = 0;
 let nickname = localStorage.getItem('chatik.nickname') || '';
 let clientId = localStorage.getItem('chatik.clientId');
 if (!clientId) { clientId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`; localStorage.setItem('chatik.clientId', clientId); }
@@ -71,41 +72,118 @@ document.querySelector('#add-room').addEventListener('click', async () => {
   }
 });
 
-messageForm.addEventListener('submit', (event) => {
+messageForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (busySending) return;
   const text = messageInput.value.trim();
-  if ((!text && !pendingAttachment) || busyUploading || !socket || socket.readyState !== WebSocket.OPEN) return;
-  socket.send(JSON.stringify({ type: 'message', text, attachment: pendingAttachment }));
-  messageInput.value = '';
-  pendingAttachment = null;
-  resizeInput();
-  messageInput.focus();
+  if ((!text && !pendingUpload) || !socket || socket.readyState !== WebSocket.OPEN) return;
+  busySending = true;
+  const sendButton = messageForm.querySelector('.send-button');
+  if (sendButton) { sendButton.disabled = true; sendButton.dataset.originalLabel = sendButton.textContent; sendButton.textContent = '…'; }
+  try {
+    let attachment = null;
+    if (pendingUpload) {
+      const upload = pendingUpload;
+      attachment = await upload.promise;
+      if (pendingUpload !== upload) return;
+    }
+    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Нет соединения с чатом. Попробуй отправить ещё раз.');
+    socket.send(JSON.stringify({ type: 'message', text, attachment }));
+    messageInput.value = '';
+    clearPendingUpload(false);
+    resizeInput();
+    messageInput.focus();
+  } catch (error) {
+    showToast(error.message || 'Не удалось отправить файл.');
+  } finally {
+    busySending = false;
+    if (sendButton) { sendButton.disabled = false; sendButton.textContent = sendButton.dataset.originalLabel || '↑'; }
+  }
 });
 
 attachButton.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', async () => {
+fileInput.addEventListener('change', () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
   if (!file) return;
   if (file.size > 10 * 1024 * 1024) return showToast('Файл слишком большой. Максимальный размер: 10 МБ.');
-  busyUploading = true;
-  attachButton.disabled = true;
-  try {
-    const body = new FormData();
-    body.append('file', file);
-    const response = await fetch('/upload', { method: 'POST', body });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'Не удалось загрузить файл.');
-    pendingAttachment = data;
-    showToast(`Прикреплён файл: ${data.name}`);
-    messageInput.focus();
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    busyUploading = false;
-    attachButton.disabled = false;
-  }
+  if (pendingUpload) clearPendingUpload();
+  startUpload(file);
 });
+
+function startUpload(file) {
+  const id = ++uploadSequence;
+  const controller = new AbortController();
+  const card = document.createElement('div');
+  card.className = 'pending-attachment';
+  card.setAttribute('role', 'status');
+  const details = document.createElement('div');
+  details.className = 'pending-attachment-details';
+  const name = document.createElement('span');
+  name.className = 'pending-attachment-name';
+  name.textContent = file.name;
+  const status = document.createElement('span');
+  status.className = 'pending-attachment-status';
+  status.textContent = 'Загрузка…';
+  details.append(name, status);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'pending-attachment-remove';
+  remove.textContent = '×';
+  remove.setAttribute('aria-label', `Удалить файл ${file.name}`);
+  remove.addEventListener('click', () => { if (pendingUpload?.id === id) clearPendingUpload(); });
+  card.append(details, remove);
+  messageForm.insertBefore(card, messageInput);
+  let resolvePromise;
+  let rejectPromise;
+  const promise = new Promise((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject; });
+  const upload = { id, controller, card, status, promise, done: false };
+  pendingUpload = upload;
+  attachButton.disabled = false;
+  const body = new FormData();
+  body.append('file', file);
+  fetch('/upload', { method: 'POST', body, signal: controller.signal })
+    .then(async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Не удалось загрузить файл.');
+      return data;
+    })
+    .then((attachment) => {
+      upload.done = true;
+      upload.attachment = attachment;
+      resolvePromise(attachment);
+      if (pendingUpload === upload) {
+        status.textContent = 'Готово';
+        card.classList.add('uploaded');
+      } else discardUploadedFile(attachment);
+    })
+    .catch((error) => {
+      upload.done = true;
+      rejectPromise(error);
+      if (pendingUpload === upload && error.name !== 'AbortError') {
+        status.textContent = 'Ошибка загрузки';
+        card.classList.add('upload-error');
+        showToast(error.message || 'Не удалось загрузить файл.');
+      }
+    });
+  promise.catch(() => {});
+  messageInput.focus();
+}
+
+function clearPendingUpload(discard = true) {
+  const upload = pendingUpload;
+  if (!upload) return;
+  pendingUpload = null;
+  upload.controller.abort();
+  upload.card.remove();
+  if (discard && upload.done && upload.attachment) discardUploadedFile(upload.attachment);
+}
+
+function discardUploadedFile(attachment) {
+  const name = typeof attachment?.url === 'string' ? attachment.url.split('/').pop() : '';
+  if (!name || !/^[-\w.%]+$/.test(name)) return;
+  fetch(`/uploads/${name}`, { method: 'DELETE' }).catch(() => {});
+}
 
 messageInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -162,6 +240,24 @@ function renderRooms() {
     label.textContent = room.name;
     label.addEventListener('click', () => selectRoom(room.id));
     wrapper.append(label);
+    const menu = document.createElement('details');
+    menu.className = 'room-menu';
+    const summary = document.createElement('summary');
+    summary.setAttribute('aria-label', `Управление комнатой ${room.name}`);
+    summary.textContent = '⋮';
+    const menuItems = document.createElement('div');
+    menuItems.className = 'room-menu-items';
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.textContent = 'Переименовать';
+    rename.addEventListener('click', () => { menu.open = false; beginRoomRename(wrapper, room); });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Удалить';
+    remove.addEventListener('click', () => { menu.open = false; deleteRoom(room); });
+    menuItems.append(rename, remove);
+    menu.append(summary, menuItems);
+    wrapper.append(menu);
     roomList.append(wrapper);
   }
 }
@@ -188,6 +284,58 @@ async function manageRoom(room) {
       if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = updated.name;
     }
     renderRooms();
+  } catch (error) { showToast(error.message); }
+}
+
+function beginRoomRename(wrapper, room) {
+  const row = document.createElement('form');
+  row.className = 'room-rename-form';
+  const input = document.createElement('input');
+  input.maxLength = 40;
+  input.value = room.name;
+  input.setAttribute('aria-label', `Новое название комнаты ${room.name}`);
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.textContent = '✓';
+  save.setAttribute('aria-label', 'Сохранить название');
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.textContent = '×';
+  cancel.setAttribute('aria-label', 'Отменить переименование');
+  cancel.addEventListener('click', renderRooms);
+  row.append(input, save, cancel);
+  wrapper.replaceChildren(row);
+  row.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) return showToast('Название комнаты не может быть пустым.');
+    save.disabled = true;
+    try {
+      const updated = await api(`/rooms/${encodeURIComponent(room.id)}`, { method: 'PUT', body: JSON.stringify({ name }) });
+      rooms = rooms.map((item) => item.id === room.id ? updated : item);
+      if (activeRoomId === room.id) {
+        roomTitle.textContent = updated.name;
+        if (sidebarCurrentRoom) sidebarCurrentRoom.textContent = updated.name;
+      }
+      renderRooms();
+    } catch (error) {
+      save.disabled = false;
+      showToast(error.message);
+      input.focus();
+    }
+  });
+  input.focus();
+  input.select();
+}
+
+async function deleteRoom(room) {
+  if (!window.confirm(`Удалить комнату «${room.name}» вместе со всеми сообщениями?`)) return;
+  try {
+    await api(`/rooms/${encodeURIComponent(room.id)}`, { method: 'DELETE' });
+    rooms = rooms.filter((item) => item.id !== room.id);
+    unreadCounts.delete(room.id);
+    if (activeRoomId === room.id && rooms.length) await selectRoom(rooms[0].id);
+    else renderRooms();
   } catch (error) { showToast(error.message); }
 }
 
@@ -297,10 +445,6 @@ function buildMessageArticle(safeMessage) {
   article.className = 'message';
   article.dataset.messageId = String(safeMessage.id || '');
   article.dataset.authorId = typeof safeMessage.authorId === 'string' ? safeMessage.authorId : '';
-  const avatar = document.createElement('div');
-  avatar.className = 'avatar';
-  avatar.textContent = initial(safeMessage.nickname);
-  avatar.setAttribute('aria-hidden', 'true');
   const body = document.createElement('div');
   body.className = 'message-body';
   const meta = document.createElement('div');
@@ -337,7 +481,7 @@ function buildMessageArticle(safeMessage) {
       }
     } catch (fallbackError) { console.error('Не удалось отобразить резервное вложение:', fallbackError); }
   }
-  article.append(avatar, body);
+  article.append(body);
   try { if (safeMessage.authorId && safeMessage.authorId === clientId) addMessageActions(article, meta, author, safeMessage); }
   catch (error) { console.error('Не удалось отобразить действия сообщения:', error); }
   return article;

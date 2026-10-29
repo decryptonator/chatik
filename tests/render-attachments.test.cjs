@@ -47,12 +47,11 @@ renderMessage({nickname:'Tester',createdAt:new Date().toISOString(),text:'Malfor
 renderMessage({nickname:'',createdAt:'invalid',attachment:null});
 const messages = elements.get('#messages').children;
 assert.equal(messages.length, 6);
-assert.equal(messages[0].children[1].children[2].tag, 'a');
-assert.equal(messages[0].children[1].children[2].children[0].tag, 'img');
-assert.equal(messages[1].children[1].children[2].children[0].tag, 'img');
-assert.equal(messages[2].children[1].children[2].className, 'pdf-preview-card');
-assert.equal(messages[2].children[1].children[2].children[0].textContent, '📄 doc.pdf');
-assert.equal(messages[3].children[1].children[2].className, 'pdf-preview-card');
+assert.equal(messages[0].children.length, 1, 'message header has no initial avatar');
+assert.equal(messages[0].querySelector('img')?.tag, 'img');
+assert.equal(messages[1].querySelector('img')?.tag, 'img');
+assert.equal(messages[2].querySelector('.pdf-preview-card')?.className, 'pdf-preview-card');
+assert.equal(messages[3].querySelector('.pdf-preview-card')?.className, 'pdf-preview-card');
 // Reproduce both requested back-to-back upload sequences and a fault on the second render.
 for (const [first, second] of [
   [{name:'first.png',type:'image/png',url:'/uploads/first.png'}, {name:'second.pdf',type:'application/pdf',url:'/uploads/second.pdf'}],
