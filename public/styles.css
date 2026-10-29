@@ -62,9 +62,24 @@ html,body{width:100%;height:100%;min-height:100%;}
 .pdf-preview-card>a{color:#cabbff;font-size:12px;}
 .message-text a{color:#cabbff;overflow-wrap:anywhere;}
 .message-render-error{color:var(--muted);font-size:12px;}
-@media(max-width:700px){.chat-layout{height:100dvh;grid-template-columns:76px minmax(0,1fr);}.room-menu-button{width:24px;}.message-body iframe,.pdf-embed{height:230px;}}
-@media(max-width:700px){.chat-layout{grid-template-columns:max-content minmax(0,1fr)}.sidebar{align-items:stretch;padding:16px 10px 11px}.sidebar-brand{justify-content:center;padding-left:0;padding-right:0}.room-list{width:max-content;min-width:0;max-width:180px}.room-row{display:flex;align-items:center;gap:2px;min-width:0}.room-row .room-button{flex:1;min-width:0}.room-button{width:auto;height:auto;justify-content:flex-start;padding:9px 10px;font-size:13px}.room-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.room-menu-button{flex:0 0 24px}.section-title{justify-content:center;padding-inline:0}.sidebar-brand>span:last-child,.section-title>span,.profile-copy,.profile-action{display:none}}
-/* Keep the conversation inside the viewport; implicit auto grid rows otherwise grow to fit message history and clip the composer. */
+@media(max-width:700px){
+  .chat-layout{position:relative;grid-template-columns:minmax(0,1fr);}
+  .sidebar{position:absolute;z-index:12;inset:0 auto 0 0;width:min(300px,85vw);align-items:stretch;padding:18px 14px 14px;background:#151920;border-right:1px solid var(--border);box-shadow:12px 0 34px #0008;transform:translateX(-105%);transition:transform .22s ease;}
+  .chat-layout.rooms-open .sidebar{transform:translateX(0);}
+  .chat-layout.rooms-open .sidebar-brand{justify-content:flex-start;padding-inline:0;}
+  .chat-layout.rooms-open .sidebar-brand>span:last-child,.chat-layout.rooms-open .profile-copy,.chat-layout.rooms-open .profile-action{display:initial;}
+  .chat-layout.rooms-open .section-title{justify-content:space-between;padding-inline:0;}
+  .chat-layout.rooms-open .room-list{width:100%;max-width:none;}
+  .chat-layout.rooms-open .room-button{width:100%;}
+  .rooms-backdrop{position:absolute;z-index:11;inset:0;width:100%;height:100%;display:block;border:0;background:#0008;opacity:0;visibility:hidden;transition:opacity .22s ease,visibility .22s ease;}
+  .chat-layout.rooms-open .rooms-backdrop{opacity:1;visibility:visible;}
+  .chat-layout .conversation{grid-column:1;}
+  .chat-room-heading{display:flex;align-items:center;gap:9px;}
+  .rooms-toggle{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);font-size:18px;cursor:pointer;}
+  .chat-room-title{flex:1;}
+}
+@media(min-width:701px){.rooms-toggle,.rooms-backdrop{display:none!important;}}
+
 .chat-layout{grid-template-rows:minmax(0,1fr)}
 #chat-screen{min-height:0}
 .conversation{min-height:0}

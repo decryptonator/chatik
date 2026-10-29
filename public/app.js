@@ -8,6 +8,10 @@ const loginError = document.querySelector('#login-error');
 const roomList = document.querySelector('#room-list');
 const messagesEl = document.querySelector('#messages');
 const roomTitle = document.querySelector('#room-title');
+const roomsToggle = document.querySelector('#rooms-toggle');
+const roomsBackdrop = document.querySelector('#rooms-backdrop');
+const chatLayout = document.querySelector('#chat-screen');
+const mobileRooms = window.matchMedia?.('(max-width: 700px)') || { matches: window.innerWidth <= 700, addEventListener() {} };
 const sidebarCurrentRoom = document.querySelector('#sidebar-current-room');
 const messageForm = document.querySelector('#message-form');
 const messageInput = document.querySelector('#message-input');
@@ -18,6 +22,22 @@ const fileInput = document.querySelector('#file-input');
 const attachButton = document.querySelector('#attach-button');
 const historyTopButton = document.querySelector('.history-scroll-top');
 const historyBottomButton = document.querySelector('.history-scroll-bottom');
+
+roomsToggle?.addEventListener('click', () => setRoomsOpen(!chatLayout.classList.contains('rooms-open')));
+roomsBackdrop?.addEventListener('click', () => setRoomsOpen(false));
+mobileRooms.addEventListener('change', (event) => {
+  if (!event.matches) setRoomsOpen(false);
+});
+
+function setRoomsOpen(open) {
+  const isOpen = mobileRooms.matches && Boolean(open);
+  chatLayout.classList.toggle('rooms-open', isOpen);
+  const sidebar = document.querySelector('#rooms-sidebar');
+  if (sidebar) sidebar.inert = mobileRooms.matches && !isOpen;
+  roomsToggle?.setAttribute('aria-expanded', String(isOpen));
+  roomsToggle?.setAttribute('aria-label', isOpen ? 'Закрыть список комнат' : 'Открыть список комнат');
+  if (!isOpen) roomsBackdrop?.blur();
+}
 
 historyTopButton?.addEventListener('click', () => { messagesEl.scrollTo({ top: 0, behavior: 'smooth' }); });
 historyBottomButton?.addEventListener('click', () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); });
@@ -238,7 +258,7 @@ function renderRooms() {
     if (isActive) label.setAttribute('aria-current', 'page');
     label.setAttribute('aria-label', `Комната: ${room.name}`);
     label.textContent = room.name;
-    label.addEventListener('click', () => selectRoom(room.id));
+    label.addEventListener('click', () => { void selectRoom(room.id); setRoomsOpen(false); });
     wrapper.append(label);
     const menu = document.createElement('details');
     menu.className = 'room-menu';
