@@ -26,4 +26,9 @@ html,body{width:100%;height:100%;min-height:100%;}
 .message-text a{color:#cabbff;overflow-wrap:anywhere;}
 .message-render-error{color:var(--muted);font-size:12px;}
 @media(max-width:700px){.chat-layout{height:100dvh;grid-template-columns:76px minmax(0,1fr);}.room-menu-button{width:24px;}.message-body iframe,.pdf-embed{height:230px;}}
-.sidebar{padding:16px 8px 11px;align-items:center}.sidebar-brand{padding:0 0 24px}.sidebar-brand>span:last-child,.section-title>span,.profile-copy,.profile-action{display:none}.section-title{padding:0 0 8px}.room-list{width:100%;justify-items:center}.room-button{justify-content:center;width:46px;height:44px;padding:0;font-size:0}.room-hash{font-size:21px}.profile{width:100%;justify-content:center;padding:12px 0 0}.chat-header{padding:16px}.messages{padding:18px 15px}.composer-wrap{padding:11px 13px 13px}.connection{font-size:0}.status-dot{width:9px;height:9px}.message{gap:9px;margin-bottom:17px}.login-card{margin:18px;padding:30px 24px}.hint{font-size:9px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+.sidebar{padding:16px 8px 11px;align-items:center}.sidebar-brand{padding:0 0 24px}.sidebar-brand>span:last-child,.section-title>span,.profile-copy,.profile-action{display:none}.section-title{padding:0 0 8px}.room-list{width:100%;justify-items:center}.room-button{justify-content:center;width:46px;height:44px;padding:0;font-size:0}.room-hash{font-size:21px}.profile{width:100%;justify-content:center;padding:12px 0 0}.chat-header{padding:16px}.messages{padding:18px 15px}.composer-wrap{padding:11px 13px 13px}.connection{font-size:0}.status-dot{width:9px;height:9px}.message{gap:9px;margin-bottom:17px}.login-card{margin:18px;padding:30px 24px}.hint{font-size:9px}}/* Keep the conversation inside the viewport; implicit auto grid rows otherwise grow to fit message history and clip the composer. */
+.chat-layout{grid-template-rows:minmax(0,1fr)}
+#chat-screen{min-height:0}
+.conversation{min-height:0}
+.messages{min-height:0}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}

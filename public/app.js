@@ -162,14 +162,6 @@ function renderRooms() {
     button.append(hash, label);
     button.addEventListener('click', () => selectRoom(room.id));
     wrapper.append(button);
-    const unreadCount = unreadCounts.get(room.id) || 0;
-    if (unreadCount > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'room-unread-badge';
-      badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
-      badge.setAttribute('aria-label', `${unreadCount} непрочитанных сообщений`);
-      wrapper.append(badge);
-    }
     const menuButton = document.createElement('button');
     menuButton.type = 'button';
     menuButton.className = 'room-menu-button';
