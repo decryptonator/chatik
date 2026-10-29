@@ -284,61 +284,77 @@ function connectSocket() {
 }
 
 function renderMessage(message) {
-  const article = document.createElement('article');
-  article.className = 'message';
   const safeMessage = message && typeof message === 'object' ? message : {};
+  let article;
   try {
-    article.dataset.messageId = String(safeMessage.id || '');
-    article.dataset.authorId = typeof safeMessage.authorId === 'string' ? safeMessage.authorId : '';
-    const avatar = document.createElement('div');
-    avatar.className = 'avatar';
-    avatar.textContent = initial(safeMessage.nickname);
-    avatar.setAttribute('aria-hidden', 'true');
-    const body = document.createElement('div');
-    body.className = 'message-body';
-    const meta = document.createElement('div');
-    meta.className = 'message-meta';
-    const author = document.createElement('strong');
-    author.textContent = typeof safeMessage.nickname === 'string' ? safeMessage.nickname : 'Неизвестный';
-    const time = document.createElement('time');
-    const date = new Date(safeMessage.createdAt);
-    time.dateTime = Number.isNaN(date.getTime()) ? '' : date.toISOString();
-    time.textContent = Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    meta.append(author, time);
-    if (safeMessage.edited) {
-      const edited = document.createElement('span'); edited.className = 'edited-marker'; edited.textContent = 'изменено'; meta.append(edited);
-    }
-    body.append(meta);
-    if (typeof safeMessage.text === 'string' && safeMessage.text) {
-      const text = document.createElement('p');
-      text.className = 'message-text';
-      linkifyText(text, safeMessage.text);
-      body.append(text);
-    }
-    const firstTextUrl = typeof safeMessage.text === 'string' ? safeMessage.text.match(/https?:\/\/[^\s<>"']+/i)?.[0]?.replace(/[),.!?;:]+$/g, '') : '';
-    if (safeMessage.preview || firstTextUrl) renderPreview(safeMessage.preview || {}, body, firstTextUrl);
-    try { renderAttachment(safeMessage.attachment, body); }
-    catch (attachmentError) {
-      console.error('Не удалось отобразить вложение:', attachmentError);
-      const attachment = safeMessage.attachment;
-      const fallback = document.createElement('a');
-      fallback.className = 'attachment-file';
-      fallback.href = typeof attachment?.url === 'string' && attachment.url.startsWith('/uploads/') && !attachment.url.includes('..') ? attachment.url : '#';
-      fallback.textContent = typeof attachment?.originalName === 'string' ? attachment.originalName : (typeof attachment?.name === 'string' ? attachment.name : 'Вложение');
-      body.append(fallback);
-    }
-    article.append(avatar, body);
-    if (safeMessage.authorId && safeMessage.authorId === clientId) addMessageActions(article, body, safeMessage);
+    article = buildMessageArticle(safeMessage);
   } catch (error) {
     console.error('Не удалось отобразить сообщение:', error);
-    article.replaceChildren();
-    article.dataset.messageId = typeof safeMessage.id === 'number' ? String(safeMessage.id) : '';
+    article = document.createElement('article');
+    article.className = 'message';
+    article.dataset.messageId = Number.isSafeInteger(Number(safeMessage.id)) ? String(safeMessage.id) : '';
     const fallback = document.createElement('p');
     fallback.className = 'message-render-error';
     fallback.textContent = 'Не удалось отобразить это сообщение.';
     article.append(fallback);
   }
-  messagesEl.append(article);
+  try {
+    messagesEl.append(article);
+  } catch (error) {
+    console.error('Не удалось добавить сообщение в список:', error);
+    return null;
+  }
+  return article;
+}
+
+function buildMessageArticle(safeMessage) {
+  const article = document.createElement('article');
+  article.className = 'message';
+  article.dataset.messageId = String(safeMessage.id || '');
+  article.dataset.authorId = typeof safeMessage.authorId === 'string' ? safeMessage.authorId : '';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = initial(safeMessage.nickname);
+  avatar.setAttribute('aria-hidden', 'true');
+  const body = document.createElement('div');
+  body.className = 'message-body';
+  const meta = document.createElement('div');
+  meta.className = 'message-meta';
+  const author = document.createElement('strong');
+  author.textContent = typeof safeMessage.nickname === 'string' ? safeMessage.nickname : 'Неизвестный';
+  const time = document.createElement('time');
+  const date = new Date(safeMessage.createdAt);
+  time.dateTime = Number.isNaN(date.getTime()) ? '' : date.toISOString();
+  time.textContent = Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  meta.append(author, time);
+  if (safeMessage.edited) {
+    const edited = document.createElement('span'); edited.className = 'edited-marker'; edited.textContent = 'изменено'; meta.append(edited);
+  }
+  body.append(meta);
+  if (typeof safeMessage.text === 'string' && safeMessage.text) {
+    const text = document.createElement('p');
+    text.className = 'message-text';
+    linkifyText(text, safeMessage.text);
+    body.append(text);
+  }
+  const firstTextUrl = typeof safeMessage.text === 'string' ? safeMessage.text.match(/https?:\/\/[^\s<>"']+/i)?.[0]?.replace(/[),.!?;:]+$/g, '') : '';
+  try { if (safeMessage.preview || firstTextUrl) renderPreview(safeMessage.preview || {}, body, firstTextUrl); }
+  catch (error) { console.error('Не удалось отобразить превью:', error); }
+  try { renderAttachment(safeMessage.attachment, body); }
+  catch (error) {
+    console.error('Не удалось отобразить вложение:', error);
+    try {
+      const attachment = safeMessage.attachment;
+      if (attachment && typeof attachment === 'object' && typeof attachment.url === 'string' && attachment.url.startsWith('/uploads/') && !attachment.url.includes('..')) {
+        const fallback = document.createElement('a');
+        fallback.className = 'attachment-file'; fallback.href = attachment.url; fallback.textContent = typeof attachment.originalName === 'string' ? attachment.originalName : (typeof attachment.name === 'string' ? attachment.name : 'Вложение');
+        body.append(fallback);
+      }
+    } catch (fallbackError) { console.error('Не удалось отобразить резервное вложение:', fallbackError); }
+  }
+  article.append(avatar, body);
+  try { if (safeMessage.authorId && safeMessage.authorId === clientId) addMessageActions(article, body, safeMessage); }
+  catch (error) { console.error('Не удалось отобразить действия сообщения:', error); }
   return article;
 }
 
@@ -507,10 +523,29 @@ function openLightbox(src, name) {
     overlay.append(image); overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.remove(); });
     document.body.append(overlay);
   }
-  const image = overlay.querySelector('img'); image.src = src; image.alt = name; image.style.transform = 'scale(1)';
-  const close = (event) => { if (event.key === 'Escape') overlay.remove(); };
-  const zoom = (event) => { event.preventDefault(); const current = Number(image.dataset.zoom || 1); const next = Math.max(.5, Math.min(4, current * (event.deltaY < 0 ? 1.15 : .87))); image.dataset.zoom = String(next); image.style.transform = `scale(${next})`; };
-  overlay.addEventListener('wheel', zoom, { passive: false }); document.addEventListener('keydown', close, { once: true });
+  const image = overlay.querySelector('img');
+  image.src = src; image.alt = name; image.style.transform = 'scale(1)'; image.dataset.zoom = '1'; image.dataset.targetZoom = '1';
+  if (image._zoomFrame) cancelAnimationFrame(image._zoomFrame);
+  const close = (event) => { if (event.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', close); } };
+  const animateZoom = () => {
+    const current = Number(image.dataset.zoom || 1);
+    const target = Number(image.dataset.targetZoom || 1);
+    const next = current + (target - current) * 0.18;
+    image.dataset.zoom = String(Math.abs(target - next) < 0.001 ? target : next);
+    image.style.transform = `scale(${image.dataset.zoom})`;
+    if (image.dataset.zoom !== image.dataset.targetZoom) image._zoomFrame = requestAnimationFrame(animateZoom);
+    else image._zoomFrame = 0;
+  };
+  const zoom = (event) => {
+    event.preventDefault();
+    const current = Number(image.dataset.targetZoom || 1);
+    const delta = Math.max(-240, Math.min(240, event.deltaY));
+    const next = Math.max(.5, Math.min(4, current * Math.exp(-delta * 0.0018)));
+    image.dataset.targetZoom = String(next);
+    if (!image._zoomFrame) image._zoomFrame = requestAnimationFrame(animateZoom);
+  };
+  overlay.addEventListener('wheel', zoom, { passive: false });
+  document.addEventListener('keydown', close);
 }
 
 function addEmptyState(text) {
@@ -537,7 +572,8 @@ function setConnection(label, state) {
 }
 
 function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  try { messagesEl.scrollTop = messagesEl.scrollHeight; }
+  catch (error) { console.error('Не удалось прокрутить сообщения:', error); }
 }
 
 function resizeInput() {
