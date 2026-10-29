@@ -206,62 +206,82 @@ function connectSocket() {
 function renderMessage(message) {
   const article = document.createElement('article');
   article.className = 'message';
-  const avatar = document.createElement('div');
-  avatar.className = 'avatar';
-  avatar.textContent = initial(message.nickname);
-  avatar.setAttribute('aria-hidden', 'true');
-  const body = document.createElement('div');
-  body.className = 'message-body';
-  const meta = document.createElement('div');
-  meta.className = 'message-meta';
-  const author = document.createElement('strong');
-  author.textContent = message.nickname;
-  const time = document.createElement('time');
-  const date = new Date(message.createdAt);
-  time.dateTime = Number.isNaN(date.getTime()) ? '' : date.toISOString();
-  time.textContent = Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const text = document.createElement('p');
-  text.className = 'message-text';
-  text.textContent = message.text;
-  meta.append(author, time);
-  body.append(meta);
-  if (message.text) body.append(text);
-  renderAttachment(message.attachment, body);
-  article.append(avatar, body);
+  try {
+    const safeMessage = message && typeof message === 'object' ? message : {};
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = initial(safeMessage.nickname);
+    avatar.setAttribute('aria-hidden', 'true');
+    const body = document.createElement('div');
+    body.className = 'message-body';
+    const meta = document.createElement('div');
+    meta.className = 'message-meta';
+    const author = document.createElement('strong');
+    author.textContent = typeof safeMessage.nickname === 'string' ? safeMessage.nickname : 'Неизвестный';
+    const time = document.createElement('time');
+    const date = new Date(safeMessage.createdAt);
+    time.dateTime = Number.isNaN(date.getTime()) ? '' : date.toISOString();
+    time.textContent = Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    meta.append(author, time);
+    body.append(meta);
+    if (typeof safeMessage.text === 'string' && safeMessage.text) {
+      const text = document.createElement('p');
+      text.className = 'message-text';
+      text.textContent = safeMessage.text;
+      body.append(text);
+    }
+    renderAttachment(safeMessage.attachment, body);
+    article.append(avatar, body);
+  } catch (error) {
+    console.error('Не удалось отобразить сообщение:', error);
+    article.textContent = 'Не удалось отобразить это сообщение.';
+  }
   messagesEl.append(article);
 }
 
 function renderAttachment(attachment, parent) {
-  if (!attachment?.url) return;
-  if (attachment.type?.startsWith('image/')) {
-    const link = document.createElement('a');
+  if (!attachment || typeof attachment !== 'object' || Array.isArray(attachment)) return;
+  const url = typeof attachment.url === 'string' && attachment.url.startsWith('/uploads/') && !attachment.url.includes('..')
+    ? attachment.url
+    : '';
+  if (!url) return;
+  const name = typeof attachment.name === 'string' && attachment.name ? attachment.name : 'Вложение';
+  const type = typeof attachment.type === 'string' ? attachment.type.toLowerCase() : '';
+  const link = document.createElement('a');
+  link.href = url;
+  if (type.startsWith('image/')) {
     link.className = 'attachment-image-link';
-    link.href = attachment.url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.setAttribute('aria-label', `Открыть изображение ${attachment.name}`);
+    link.setAttribute('aria-label', `Открыть изображение ${name}`);
     const image = document.createElement('img');
     image.className = 'attachment-image';
-    image.src = attachment.url;
-    image.alt = attachment.name;
+    image.alt = name;
     image.loading = 'lazy';
+    image.addEventListener('error', () => {
+      link.replaceWith(createAttachmentFileLink(url, name, attachment.size));
+    }, { once: true });
+    image.src = url;
     link.append(image);
-    parent.append(link);
-    return;
+  } else {
+    return parent.append(createAttachmentFileLink(url, name, attachment.size));
   }
+  parent.append(link);
+}
+function createAttachmentFileLink(url, name, bytes) {
   const link = document.createElement('a');
   link.className = 'attachment-file';
-  link.href = attachment.url;
-  link.download = attachment.name;
+  link.href = url;
+  link.download = name;
   link.rel = 'noopener';
-  const name = document.createElement('span');
-  name.className = 'attachment-name';
-  name.textContent = attachment.name;
+  const label = document.createElement('span');
+  label.className = 'attachment-name';
+  label.textContent = name;
   const size = document.createElement('span');
   size.className = 'attachment-size';
-  size.textContent = formatSize(attachment.size);
-  link.append(name, size);
-  parent.append(link);
+  size.textContent = formatSize(bytes);
+  link.append(label, size);
+  return link;
 }
 
 function formatSize(bytes) {
@@ -284,7 +304,8 @@ function removeEmptyState() {
 }
 
 function initial(name) {
-  return [...(name || '?')][0].toLocaleUpperCase();
+  const value = typeof name === 'string' && name.length ? name : '?';
+  return [...value][0].toLocaleUpperCase();
 }
 
 function setConnection(label, state) {
