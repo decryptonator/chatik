@@ -29,11 +29,13 @@
         <div class="section-title"><span>КОМНАТЫ</span><button id="add-room" class="icon-button" type="button" title="Создать комнату" aria-label="Создать комнату">+</button></div>
         <div id="sidebar-current-room" class="sidebar-current-room" aria-live="polite"></div>
         <nav id="room-list" class="room-list" aria-label="Комнаты"></nav>
-        <div class="profile"><div class="avatar" id="user-avatar">?</div><div class="profile-copy"><strong id="user-name"></strong><span>в сети</span></div><button id="change-name" class="icon-button profile-action" type="button" title="Сменить ник" aria-label="Сменить ник">↗</button></div>
+        <div class="profile"><div class="avatar" id="user-avatar">?</div><div class="profile-copy"><strong id="user-name"></strong><span>в сети</span></div></div>
       </aside>
       <section class="conversation">
-        <header class="chat-header"><div><p class="eyebrow">КОМНАТА</p><h2 id="room-title">Общий</h2></div><div class="connection"><span class="status-dot"></span><span id="connection-label">подключение</span></div></header>
+        <header class="chat-header"><div class="chat-room-heading"><p class="eyebrow">КОМНАТА</p><h2 id="room-title" class="chat-room-title">Общий</h2></div><div class="connection"><span class="status-dot"></span><span id="connection-label">подключение</span></div></header>
         <div class="messages" id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
+        <button class="history-scroll-button history-scroll-top" type="button" aria-label="К началу чата" title="К началу чата">↑</button>
+        <button class="history-scroll-button history-scroll-bottom" type="button" aria-label="К последним сообщениям" title="К последним сообщениям">↓</button>
         <div class="composer-wrap"><form id="message-form" class="composer"><input id="file-input" type="file" hidden><button id="attach-button" class="attach-button" type="button" aria-label="Прикрепить файл" title="Прикрепить файл"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12.5 14.5 6a4 4 0 0 1 5.7 5.7l-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2"/></svg></button><textarea id="message-input" maxlength="2000" rows="1" placeholder="Написать сообщение..." aria-label="Текст сообщения"></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение">↑</button></form><p class="hint">Enter отправить · Shift + Enter новая строка · до 10 МБ</p></div>
       </section>
     </section>

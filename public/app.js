@@ -16,6 +16,11 @@ const connectionLabel = document.querySelector('#connection-label');
 const toast = document.querySelector('#toast');
 const fileInput = document.querySelector('#file-input');
 const attachButton = document.querySelector('#attach-button');
+const historyTopButton = document.querySelector('.history-scroll-top');
+const historyBottomButton = document.querySelector('.history-scroll-bottom');
+
+historyTopButton?.addEventListener('click', () => { messagesEl.scrollTo({ top: 0, behavior: 'smooth' }); });
+historyBottomButton?.addEventListener('click', () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); });
 
 let pendingAttachment = null;
 let busyUploading = false;
@@ -43,7 +48,7 @@ loginForm.addEventListener('submit', async (event) => {
   await enterChat();
 });
 
-document.querySelector('#change-name').addEventListener('click', () => {
+document.querySelector('#change-name')?.addEventListener('click', () => {
   if (socket) socket.close();
   chatScreen.classList.add('hidden');
   loginScreen.classList.remove('hidden');
@@ -149,23 +154,15 @@ function renderRooms() {
   for (const room of rooms) {
     const wrapper = document.createElement('div');
     wrapper.className = 'room-row';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `room-button${room.id === activeRoomId ? ' active' : ''}`;
-    button.setAttribute('aria-label', `Комната: ${room.name}`);
-    const label = document.createElement('span');
-    label.className = 'room-label';
+    const isActive = room.id === activeRoomId;
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = `room-button room-label${isActive ? ' active' : ' room-label-inactive'}`;
+    if (isActive) label.setAttribute('aria-current', 'page');
+    label.setAttribute('aria-label', `Комната: ${room.name}`);
     label.textContent = room.name;
-    button.append(label);
-    button.addEventListener('click', () => selectRoom(room.id));
-    wrapper.append(button);
-    const menuButton = document.createElement('button');
-    menuButton.type = 'button';
-    menuButton.className = 'room-menu-button';
-    menuButton.textContent = '⋮';
-    menuButton.setAttribute('aria-label', `Меню комнаты ${room.name}`);
-    menuButton.addEventListener('click', (event) => { event.stopPropagation(); manageRoom(room); });
-    wrapper.append(menuButton);
+    label.addEventListener('click', () => selectRoom(room.id));
+    wrapper.append(label);
     roomList.append(wrapper);
   }
 }
