@@ -342,7 +342,7 @@ function buildMessageArticle(safeMessage) {
     } catch (fallbackError) { console.error('Не удалось отобразить резервное вложение:', fallbackError); }
   }
   article.append(avatar, body);
-  try { if (safeMessage.authorId && safeMessage.authorId === clientId) addMessageActions(article, body, safeMessage); }
+  try { if (safeMessage.authorId && safeMessage.authorId === clientId) addMessageActions(article, meta, author, safeMessage); }
   catch (error) { console.error('Не удалось отобразить действия сообщения:', error); }
   return article;
 }
@@ -420,16 +420,16 @@ function renderPreview(preview, parent, explicitUrl = '') {
   const title = document.createElement('strong'); title.textContent = String(preview.title || firstUrl).slice(0, 240); card.append(title); parent.append(card);
 }
 
-function addMessageActions(article, body, message) {
-  const wrap = document.createElement('div'); wrap.className = 'message-actions';
-  const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Изменить'; edit.addEventListener('click', () => beginEdit(article, message));
+function addMessageActions(article, meta, author, message) {
+  const menu = document.createElement('details'); menu.className = 'message-menu';
+  const toggle = document.createElement('summary'); toggle.textContent = '⋮'; toggle.setAttribute('aria-label', 'Действия с сообщением');
+  const items = document.createElement('div'); items.className = 'message-menu-items';
+  const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Изменить'; edit.addEventListener('click', () => { menu.open = false; beginEdit(article, message); });
   const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Удалить'; remove.addEventListener('click', async () => {
     if (!window.confirm('Удалить это сообщение?')) return;
     try { await api(`/api/messages/${message.id}`, { method: 'DELETE' }); article.remove(); } catch (error) { showToast(error.message); }
   });
-  const menu = document.createElement('details'); menu.className = 'message-menu';
-  const toggle = document.createElement('summary'); toggle.textContent = '⋮'; toggle.setAttribute('aria-label', 'Действия с сообщением');
-  const items = document.createElement('div'); items.className = 'message-menu-items'; items.append(edit, remove); menu.append(toggle, items); wrap.append(menu); body.append(wrap);
+  items.append(edit, remove); menu.append(toggle, items); meta.insertBefore(menu, author.nextSibling);
 }
 
 function beginEdit(article, message) {
