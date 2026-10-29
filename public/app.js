@@ -153,13 +153,10 @@ function renderRooms() {
     button.type = 'button';
     button.className = `room-button${room.id === activeRoomId ? ' active' : ''}`;
     button.setAttribute('aria-label', `Комната: ${room.name}`);
-    const hash = document.createElement('span');
-    hash.className = 'room-hash';
-    hash.textContent = '#';
     const label = document.createElement('span');
     label.className = 'room-label';
     label.textContent = room.name;
-    button.append(hash, label);
+    button.append(label);
     button.addEventListener('click', () => selectRoom(room.id));
     wrapper.append(button);
     const menuButton = document.createElement('button');
