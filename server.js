@@ -2,8 +2,10 @@
 
 const path = require('node:path');
 const http = require('node:http');
+const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
+const multer = require('multer');
 const Database = require('better-sqlite3');
 const { WebSocketServer, WebSocket } = require('ws');
 
@@ -11,6 +13,8 @@ const PORT = parsePort(process.env.PORT);
 const HOST = process.env.HOST || '0.0.0.0';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'chatik.sqlite');
 const MAX_MESSAGE_LENGTH = 2000;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const MAX_NICK_LENGTH = 24;
 const MAX_ROOM_NAME_LENGTH = 40;
 const HISTORY_LIMIT = 100;
@@ -42,6 +46,10 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS messages_room_id_id ON messages(room_id, id DESC);
 `);
+if (!db.prepare('PRAGMA table_info(messages)').all().some((column) => column.name === 'attachment')) {
+  db.exec('ALTER TABLE messages ADD COLUMN attachment TEXT');
+}
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const roomCount = db.prepare('SELECT COUNT(*) AS count FROM rooms').get().count;
 if (roomCount === 0) {
@@ -58,16 +66,28 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '8kb' }));
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+app.use('/uploads', express.static(UPLOAD_DIR, { dotfiles: 'deny', index: false, fallthrough: false }));
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => callback(null, UPLOAD_DIR),
+    filename: (_req, file, callback) => {
+      const extension = path.extname(file.originalname).slice(0, 16).replace(/[^.\w-]/g, '');
+      callback(null, `${randomUUID()}${extension}`);
+    },
+  }),
+  limits: { fileSize: MAX_FILE_SIZE, files: 1 },
+});
 
 const listRooms = db.prepare('SELECT id, name FROM rooms ORDER BY created_at, name');
 const roomById = db.prepare('SELECT id, name FROM rooms WHERE id = ?');
 const createRoom = db.prepare('INSERT INTO rooms (id, name) VALUES (?, ?)');
 const roomHistory = db.prepare(`
-  SELECT id, room_id AS roomId, nickname, text, created_at AS createdAt
+  SELECT id, room_id AS roomId, nickname, text, attachment, created_at AS createdAt
   FROM messages WHERE room_id = ? ORDER BY id DESC LIMIT ?
 `);
 const insertMessage = db.prepare(`
-  INSERT INTO messages (room_id, nickname, text) VALUES (?, ?, ?)
+  INSERT INTO messages (room_id, nickname, text, attachment) VALUES (?, ?, ?, ?)
 `);
 
 app.get('/api/rooms', (_req, res) => res.json(listRooms.all()));
@@ -83,7 +103,22 @@ app.post('/api/rooms', (req, res) => {
 app.get('/api/rooms/:roomId/messages', (req, res) => {
   if (!roomById.get(req.params.roomId)) return res.status(404).json({ error: 'Комната не найдена.' });
   const messages = roomHistory.all(req.params.roomId, HISTORY_LIMIT).reverse();
-  res.json(messages);
+  res.json(messages.map(withAttachment));
+});
+app.post('/upload', (req, res) => {
+  upload.single('file')(req, res, (error) => {
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'Файл слишком большой. Максимальный размер: 10 МБ.' });
+    }
+    if (error) return res.status(400).json({ error: 'Не удалось загрузить файл. Попробуйте ещё раз.' });
+    if (!req.file) return res.status(400).json({ error: 'Выберите файл для отправки.' });
+    res.status(201).json({
+      url: `/uploads/${encodeURIComponent(req.file.filename)}`,
+      name: path.basename(req.file.originalname).slice(0, 255),
+      size: req.file.size,
+      type: req.file.mimetype,
+    });
+  });
 });
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.get('*', (_req, res, next) => {
@@ -96,7 +131,23 @@ const clientsByRoom = new Map();
 
 function cleanText(value, maxLength) {
   if (typeof value !== 'string') return '';
-  return value.trim().replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').slice(0, maxLength);
+  return value.trim().replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/g, '').slice(0, maxLength);
+}
+
+function cleanAttachment(value) {
+  if (!value || typeof value !== 'object' || typeof value.url !== 'string' || !value.url.startsWith('/uploads/') || value.url.includes('..')) return null;
+  const name = cleanText(value.name, 255);
+  const size = Number(value.size);
+  const type = cleanText(value.type, 150).toLowerCase();
+  if (!name || !Number.isSafeInteger(size) || size < 0 || size > MAX_FILE_SIZE) return null;
+  return { url: value.url, name, size, type };
+}
+
+function withAttachment(row) {
+  let attachment = null;
+  try { attachment = row.attachment ? JSON.parse(row.attachment) : null; } catch { attachment = null; }
+  const { attachment: _storedAttachment, ...message } = row;
+  return { ...message, attachment };
 }
 
 function send(ws, payload) {
@@ -150,11 +201,12 @@ wss.on('connection', (ws) => {
       const now = Date.now();
       if (now - ws.lastSentAt < 350) return send(ws, { type: 'error', message: 'Не отправляйте сообщения слишком часто.' });
       const text = cleanText(data.text, MAX_MESSAGE_LENGTH);
-      if (!text) return;
+      const attachment = cleanAttachment(data.attachment);
+      if (!text && !attachment) return;
       ws.lastSentAt = now;
-      const result = insertMessage.run(ws.roomId, ws.nickname, text);
-      const row = db.prepare(`SELECT id, room_id AS roomId, nickname, text, created_at AS createdAt FROM messages WHERE id = ?`).get(result.lastInsertRowid);
-      broadcast(ws.roomId, { type: 'message', message: row });
+      const result = insertMessage.run(ws.roomId, ws.nickname, text, attachment ? JSON.stringify(attachment) : null);
+      const row = db.prepare(`SELECT id, room_id AS roomId, nickname, text, attachment, created_at AS createdAt FROM messages WHERE id = ?`).get(result.lastInsertRowid);
+      broadcast(ws.roomId, { type: 'message', message: withAttachment(row) });
     }
   });
   ws.on('close', () => leaveRoom(ws));

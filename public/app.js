@@ -13,7 +13,11 @@ const messageInput = document.querySelector('#message-input');
 const connectionEl = document.querySelector('.connection');
 const connectionLabel = document.querySelector('#connection-label');
 const toast = document.querySelector('#toast');
+const fileInput = document.querySelector('#file-input');
+const attachButton = document.querySelector('#attach-button');
 
+let pendingAttachment = null;
+let busyUploading = false;
 let nickname = localStorage.getItem('chatik.nickname') || '';
 let rooms = [];
 let activeRoomId = '';
@@ -61,11 +65,37 @@ document.querySelector('#add-room').addEventListener('click', async () => {
 messageForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const text = messageInput.value.trim();
-  if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
-  socket.send(JSON.stringify({ type: 'message', text }));
+  if ((!text && !pendingAttachment) || busyUploading || !socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ type: 'message', text, attachment: pendingAttachment }));
   messageInput.value = '';
+  pendingAttachment = null;
   resizeInput();
   messageInput.focus();
+});
+
+attachButton.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files?.[0];
+  fileInput.value = '';
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) return showToast('Файл слишком большой. Максимальный размер: 10 МБ.');
+  busyUploading = true;
+  attachButton.disabled = true;
+  try {
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetch('/upload', { method: 'POST', body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Не удалось загрузить файл.');
+    pendingAttachment = data;
+    showToast(`Прикреплён файл: ${data.name}`);
+    messageInput.focus();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    busyUploading = false;
+    attachButton.disabled = false;
+  }
 });
 
 messageInput.addEventListener('keydown', (event) => {
@@ -194,9 +224,51 @@ function renderMessage(message) {
   text.className = 'message-text';
   text.textContent = message.text;
   meta.append(author, time);
-  body.append(meta, text);
+  body.append(meta);
+  if (message.text) body.append(text);
+  renderAttachment(message.attachment, body);
   article.append(avatar, body);
   messagesEl.append(article);
+}
+
+function renderAttachment(attachment, parent) {
+  if (!attachment?.url) return;
+  if (attachment.type?.startsWith('image/')) {
+    const link = document.createElement('a');
+    link.className = 'attachment-image-link';
+    link.href = attachment.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.setAttribute('aria-label', `Открыть изображение ${attachment.name}`);
+    const image = document.createElement('img');
+    image.className = 'attachment-image';
+    image.src = attachment.url;
+    image.alt = attachment.name;
+    image.loading = 'lazy';
+    link.append(image);
+    parent.append(link);
+    return;
+  }
+  const link = document.createElement('a');
+  link.className = 'attachment-file';
+  link.href = attachment.url;
+  link.download = attachment.name;
+  link.rel = 'noopener';
+  const name = document.createElement('span');
+  name.className = 'attachment-name';
+  name.textContent = attachment.name;
+  const size = document.createElement('span');
+  size.className = 'attachment-size';
+  size.textContent = formatSize(attachment.size);
+  link.append(name, size);
+  parent.append(link);
+}
+
+function formatSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
 function addEmptyState(text) {

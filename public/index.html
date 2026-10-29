@@ -33,7 +33,7 @@
       <section class="conversation">
         <header class="chat-header"><div><p class="eyebrow">КОМНАТА</p><h2 id="room-title">Общий</h2></div><div class="connection"><span class="status-dot"></span><span id="connection-label">подключение</span></div></header>
         <div class="messages" id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
-        <div class="composer-wrap"><form id="message-form" class="composer"><textarea id="message-input" maxlength="2000" rows="1" placeholder="Написать сообщение..." aria-label="Текст сообщения"></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение">↑</button></form><p class="hint">Enter отправить · Shift + Enter новая строка</p></div>
+        <div class="composer-wrap"><form id="message-form" class="composer"><input id="file-input" type="file" hidden><button id="attach-button" class="attach-button" type="button" aria-label="Прикрепить файл" title="Прикрепить файл"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12.5 14.5 6a4 4 0 0 1 5.7 5.7l-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2"/></svg></button><textarea id="message-input" maxlength="2000" rows="1" placeholder="Написать сообщение..." aria-label="Текст сообщения"></textarea><button class="send-button" type="submit" aria-label="Отправить сообщение">↑</button></form><p class="hint">Enter отправить · Shift + Enter новая строка · до 10 МБ</p></div>
       </section>
     </section>
   </main>
